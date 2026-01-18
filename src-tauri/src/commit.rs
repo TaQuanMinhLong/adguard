@@ -2,15 +2,15 @@ use crate::history::{cleanup_old_history, verify_host_file, write_history_snapsh
 use crate::platform::flush_dns;
 use crate::state::AppState;
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use tauri::async_runtime;
 
 /// Commit current state to hosts file
 pub async fn commit_changes(
     state: Arc<AppState>,
-    hosts_file_path: PathBuf,
-    history_dir: Option<PathBuf>,
+    hosts_file_path: Arc<Path>,
+    history_dir: Option<Arc<Path>>,
     max_history_entries: usize,
 ) -> Result<(), anyhow::Error> {
     // Serialize current state

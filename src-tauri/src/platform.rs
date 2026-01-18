@@ -1,22 +1,25 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 
 /// Get the default hosts file path for the current platform
 #[inline]
-pub fn default_hosts_file_path() -> PathBuf {
+pub fn default_hosts_file_path() -> Arc<Path> {
     #[cfg(target_os = "windows")]
     {
         PathBuf::from(r"C:\Windows\System32\drivers\etc\hosts")
+            .as_path()
+            .into()
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        PathBuf::from("/etc/hosts")
+        PathBuf::from("/etc/hosts").as_path().into()
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
-        PathBuf::from("/etc/hosts") // Default fallback
+        PathBuf::from("/etc/hosts").as_path().into() // Default fallback
     }
 }
 

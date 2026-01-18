@@ -38,7 +38,10 @@ pub fn run() {
                 // If loading fails, create default config
                 let default_config = Config::default();
                 // Try to save it, but don't fail if we can't
-                let _ = default_config.save_to_file(&config_path);
+                let _ = default_config
+                    .save_to_file(&config_path)
+                    .inspect_err(|e| eprintln!("Failed to save config: {}", e));
+
                 default_config
             });
 
@@ -58,9 +61,11 @@ pub fn run() {
                         })
                     })
                     .join("history");
-                config.history_dir = Some(default_history);
+                config.history_dir = Some(default_history.as_path().into());
                 // Try to save updated config, but don't fail if we can't
-                let _ = config.save_to_file(&config_path);
+                let _ = config
+                    .save_to_file(&config_path)
+                    .inspect_err(|e| eprintln!("Failed to save config: {}", e));
             }
 
             // Create app state

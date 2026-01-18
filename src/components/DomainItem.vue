@@ -1,17 +1,16 @@
 <script setup lang="ts">
 const props = defineProps<{
-    ip: string;
     hostname: string;
     disabled?: boolean;
 }>();
 
 const emit = defineEmits<{
-    remove: [ip: string, hostname: string];
+    remove: [hostname: string];
 }>();
 
 function handleRemove() {
     if (!props.disabled) {
-        emit("remove", props.ip, props.hostname);
+        emit("remove", props.hostname);
     }
 }
 </script>

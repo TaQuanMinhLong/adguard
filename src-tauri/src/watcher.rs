@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use tauri::async_runtime;
 use tauri::{AppHandle, Manager};
@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager};
 /// Start watching the hosts file for external changes
 pub fn start_watcher(
     app: AppHandle,
-    hosts_file_path: PathBuf,
+    hosts_file_path: Arc<Path>,
     state: Arc<AppState>,
 ) -> Result<(), anyhow::Error> {
     let path_for_watch = hosts_file_path.clone();

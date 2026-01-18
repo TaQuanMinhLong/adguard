@@ -1,7 +1,8 @@
 use pest_derive::Parser;
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[grammar = "grammar/config.pest"]
@@ -36,8 +37,8 @@ impl Theme {
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub host_file_path: Option<PathBuf>,
-    pub history_dir: Option<PathBuf>,
+    pub host_file_path: Option<Arc<Path>>,
+    pub history_dir: Option<Arc<Path>>,
     pub max_history_entries: usize,
     pub theme: Theme,
 }
@@ -56,13 +57,12 @@ impl Default for Config {
 
 impl Config {
     /// Load config from INI file
-    pub fn load_from_file(path: &PathBuf) -> Result<Self, anyhow::Error> {
-        let content = fs::read_to_string(path).unwrap_or_else(|_| String::new()); // Return empty string if file doesn't exist
-
-        if content.is_empty() {
-            return Ok(Config::default());
-        }
-
+    #[inline]
+    pub fn load_from_file(path: &Path) -> Result<Self, anyhow::Error> {
+        let content = match fs::read_to_string(path) {
+            Ok(content) if !content.is_empty() => content,
+            _ => return Ok(Config::default()),
+        };
         Self::parse_ini(&content)
     }
 
@@ -90,9 +90,7 @@ impl Config {
                     let key = inner.next().unwrap().as_str();
                     let value = inner.next().unwrap().as_str();
 
-                    let section = properties
-                        .entry(current_section)
-                        .or_default();
+                    let section = properties.entry(current_section).or_default();
                     section.insert(key, value);
                 }
                 _ => {}
@@ -101,14 +99,16 @@ impl Config {
 
         // Parse [paths] section
         if let Some(paths) = properties.get("paths") {
-            if let Some(host_path) = paths.get("host_file_path") {
+            if let Some(&host_path) = paths.get("host_file_path") {
                 if !host_path.is_empty() {
-                    config.host_file_path = Some(PathBuf::from(host_path));
+                    let host_path = PathBuf::from(host_path);
+                    config.host_file_path = Some(host_path.as_path().into());
                 }
             }
-            if let Some(history_path) = paths.get("history_dir") {
+            if let Some(&history_path) = paths.get("history_dir") {
                 if !history_path.is_empty() {
-                    config.history_dir = Some(PathBuf::from(history_path));
+                    let history_path = PathBuf::from(history_path);
+                    config.history_dir = Some(history_path.as_path().into());
                 }
             }
             if let Some(max_entries) = paths.get("max_history_entries") {
@@ -153,7 +153,8 @@ impl Config {
     }
 
     /// Save config to file
-    pub fn save_to_file(&self, path: &PathBuf) -> Result<(), anyhow::Error> {
+    #[inline]
+    pub fn save_to_file(&self, path: &Path) -> Result<(), anyhow::Error> {
         // Create parent directory if it doesn't exist
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -179,8 +180,14 @@ mod tests {
     fn test_parse_paths_section() {
         let content = "[paths]\nhost_file_path = /etc/hosts\nhistory_dir = /tmp/history\nmax_history_entries = 100\n";
         let config = Config::parse_ini(content).unwrap();
-        assert_eq!(config.host_file_path, Some(PathBuf::from("/etc/hosts")));
-        assert_eq!(config.history_dir, Some(PathBuf::from("/tmp/history")));
+        match config.host_file_path {
+            Some(v) => assert_eq!(v.as_ref(), "/etc/hosts"),
+            None => panic!("host_file_path is None"),
+        }
+        match config.history_dir {
+            Some(v) => assert_eq!(v.as_ref(), "/tmp/history"),
+            None => panic!("history_dir is None"),
+        }
         assert_eq!(config.max_history_entries, 100);
     }
 
@@ -195,13 +202,16 @@ mod tests {
     fn test_parse_with_comments() {
         let content = "# This is a comment\n[paths]\nhost_file_path = /etc/hosts\n";
         let config = Config::parse_ini(content).unwrap();
-        assert_eq!(config.host_file_path, Some(PathBuf::from("/etc/hosts")));
+        match config.host_file_path {
+            Some(v) => assert_eq!(v.as_ref(), "/etc/hosts"),
+            None => panic!("host_file_path is None"),
+        }
     }
 
     #[test]
     fn test_serialize_config() {
         let mut config = Config::default();
-        config.host_file_path = Some(PathBuf::from("/etc/hosts"));
+        config.host_file_path = Some(PathBuf::from("/etc/hosts").as_path().into());
         config.theme = Theme::Light;
 
         let ini = config.to_ini();
@@ -212,8 +222,8 @@ mod tests {
     #[test]
     fn test_round_trip() {
         let original = Config {
-            host_file_path: Some(PathBuf::from("/etc/hosts")),
-            history_dir: Some(PathBuf::from("/tmp/history")),
+            host_file_path: Some(PathBuf::from("/etc/hosts").as_path().into()),
+            history_dir: Some(PathBuf::from("/tmp/history").as_path().into()),
             max_history_entries: 75,
             theme: Theme::Light,
         };

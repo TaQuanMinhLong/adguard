@@ -3,47 +3,28 @@ use crate::history::{list_history_entries, rollback_to_history};
 use crate::parser::parse_hosts;
 use crate::platform::{default_hosts_file_path, is_elevated};
 use crate::state::AppState;
-use std::net::IpAddr;
+use std::collections::BTreeSet;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 use tauri::State;
 
 #[tauri::command]
 pub async fn get_blocked_domains(
     state: State<'_, Arc<AppState>>,
-) -> Result<Vec<(String, String)>, String> {
-    let blocks = state.get_all_blocks();
-    Ok(blocks
-        .into_iter()
-        .map(|(ip, hostname)| (ip.to_string(), hostname))
-        .collect())
+) -> Result<BTreeSet<Arc<str>>, ()> {
+    Ok(state.get_all_blocks())
 }
 
 #[tauri::command]
-pub async fn remove_domain(
-    state: State<'_, Arc<AppState>>,
-    ip: String,
-    hostname: String,
-) -> Result<(), String> {
-    let ip_addr = IpAddr::from_str(&ip).map_err(|e| format!("Invalid IP address: {}", e))?;
-
-    state
-        .remove_block(ip_addr, &hostname)
-        .map_err(|e| e.to_string())
+pub async fn remove_domain(state: State<'_, Arc<AppState>>, hostname: &str) -> Result<(), ()> {
+    state.remove_block(hostname);
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn add_domain(
-    state: State<'_, Arc<AppState>>,
-    ip: String,
-    hostname: String,
-) -> Result<(), String> {
-    let ip_addr = IpAddr::from_str(&ip).map_err(|e| format!("Invalid IP address: {}", e))?;
-
-    state
-        .add_block(ip_addr, hostname)
-        .map_err(|e| e.to_string())
+pub async fn add_domain(state: State<'_, Arc<AppState>>, hostname: &str) -> Result<(), String> {
+    state.add_block(hostname);
+    Ok(())
 }
 
 #[tauri::command]
@@ -97,7 +78,7 @@ pub async fn get_history_list(
 }
 
 #[tauri::command]
-pub async fn rollback_to(state: State<'_, Arc<AppState>>, filename: String) -> Result<(), String> {
+pub async fn rollback_to(state: State<'_, Arc<AppState>>, filename: &str) -> Result<(), String> {
     let config = state.get_config();
     let history_dir = config
         .history_dir
@@ -158,7 +139,7 @@ pub fn update_config(
         if host_path.is_empty() {
             config.host_file_path = None;
         } else {
-            config.host_file_path = Some(PathBuf::from(host_path));
+            config.host_file_path = Some(PathBuf::from(host_path).as_path().into());
         }
     }
 
@@ -166,7 +147,7 @@ pub fn update_config(
         if history_path.is_empty() {
             config.history_dir = None;
         } else {
-            config.history_dir = Some(PathBuf::from(history_path));
+            config.history_dir = Some(PathBuf::from(history_path).as_path().into());
         }
     }
 
@@ -197,10 +178,9 @@ pub fn get_host_file_path(state: State<'_, Arc<AppState>>) -> String {
 
 #[tauri::command]
 pub fn get_statistics(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
-    let (total_blocked, unique_ips) = state.get_statistics();
+    let total_blocked = state.get_total_blocked();
     Ok(serde_json::json!({
         "total_blocked": total_blocked,
-        "unique_ips": unique_ips,
     }))
 }
 
@@ -217,9 +197,7 @@ pub fn export_hosts(state: State<'_, Arc<AppState>>) -> String {
 #[tauri::command]
 pub async fn import_hosts(state: State<'_, Arc<AppState>>, content: String) -> Result<(), String> {
     let parsed = parse_hosts(&content).map_err(|e| format!("Failed to parse hosts file: {}", e))?;
-
     *state.blocking.lock() = parsed.blocking;
     *state.preserved_lines.lock() = parsed.preserved_lines;
-
     Ok(())
 }

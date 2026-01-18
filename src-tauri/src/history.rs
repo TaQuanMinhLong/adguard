@@ -1,7 +1,8 @@
-use crate::parser::{is_localhost_ip, parse_hosts};
+use crate::parser::parse_hosts;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
@@ -14,7 +15,8 @@ pub struct HistoryEntry {
 }
 
 /// Verify a hosts file is valid
-pub fn verify_host_file(path: &PathBuf) -> Result<(), anyhow::Error> {
+#[inline]
+pub fn verify_host_file(path: &Path) -> Result<(), anyhow::Error> {
     // Check if file exists and is readable
     let content = fs::read_to_string(path)?;
 
@@ -26,29 +28,21 @@ pub fn verify_host_file(path: &PathBuf) -> Result<(), anyhow::Error> {
     let parsed = parse_hosts(&content)?;
 
     // Validate all IP addresses are valid
-    let mut seen_entries: HashSet<(std::net::IpAddr, String)> = HashSet::new();
+    let mut seen_entries: HashSet<Arc<str>> = HashSet::new();
 
-    for (ip, hostnames) in &parsed.blocking {
-        // Check if IP is valid (parse_hosts already validates this, but double-check)
-        if !is_localhost_ip(ip) {
-            // Non-localhost IPs are in preserved_lines, which is fine
-            continue;
+    for hostname in parsed.blocking {
+        // Check for duplicate entries
+        if !seen_entries.insert(hostname.clone()) {
+            return Err(anyhow::anyhow!("Duplicate entry: {}", hostname));
         }
 
-        for hostname in hostnames {
-            // Check for duplicate entries
-            if !seen_entries.insert((*ip, hostname.clone())) {
-                return Err(anyhow::anyhow!("Duplicate entry: {} {}", ip, hostname));
-            }
+        // Validate hostname format (basic check)
+        if hostname.is_empty() {
+            return Err(anyhow::anyhow!("Empty hostname found"));
+        }
 
-            // Validate hostname format (basic check)
-            if hostname.is_empty() {
-                return Err(anyhow::anyhow!("Empty hostname found"));
-            }
-
-            if hostname.len() > 253 {
-                return Err(anyhow::anyhow!("Hostname too long: {}", hostname));
-            }
+        if hostname.len() > 253 {
+            return Err(anyhow::anyhow!("Hostname too long: {}", hostname));
         }
     }
 
@@ -165,6 +159,7 @@ pub fn list_history_entries(history_dir: &Path) -> Result<Vec<HistoryEntry>, any
 }
 
 /// Clean up old history entries, keeping only the most recent N
+#[inline]
 pub fn cleanup_old_history(history_dir: &Path, max_entries: usize) -> Result<(), anyhow::Error> {
     let mut entries = list_history_entries(history_dir)?;
 
@@ -186,9 +181,10 @@ pub fn cleanup_old_history(history_dir: &Path, max_entries: usize) -> Result<(),
 }
 
 /// Rollback to a history entry
+#[inline]
 pub fn rollback_to_history(
     history_entry: &HistoryEntry,
-    hosts_file_path: &PathBuf,
+    hosts_file_path: &Path,
 ) -> Result<(), anyhow::Error> {
     // Verify the history file first
     verify_host_file(&history_entry.path)?;
@@ -205,6 +201,7 @@ pub fn rollback_to_history(
 }
 
 /// Delete history files by filenames
+#[inline]
 pub fn delete_history_files(history_dir: &Path, filenames: &[String]) -> Result<(), anyhow::Error> {
     for filename in filenames {
         let file_path = history_dir.join(filename);

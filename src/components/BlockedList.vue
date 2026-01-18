@@ -5,17 +5,12 @@ import { toast } from "vue-sonner";
 import DomainItem from "./DomainItem.vue";
 import StatisticsCard from "./StatisticsCard.vue";
 
-interface BlockedDomain {
-    ip: string;
-    hostname: string;
-}
-
 const props = defineProps<{
     disabled?: boolean;
 }>();
 
-const blockedDomains = ref<BlockedDomain[]>([]);
-const statistics = ref({ total_blocked: 0, unique_ips: 0 });
+const blockedDomains = ref<string[]>([]);
+const statistics = ref({ total_blocked: 0 });
 const isLoading = ref(false);
 const isSaving = ref(false);
 const showAddInput = ref(false);
@@ -25,13 +20,8 @@ const isAdding = ref(false);
 async function loadBlockedDomains() {
     isLoading.value = true;
     try {
-        const domains = await invoke<[string, string][]>("get_blocked_domains");
-        blockedDomains.value = domains.map(([ip, hostname]) => ({ ip, hostname }));
-
-        const stats = await invoke<{
-            total_blocked: number;
-            unique_ips: number;
-        }>("get_statistics");
+        blockedDomains.value = await invoke<string[]>("get_blocked_domains");
+        const stats = await invoke<{ total_blocked: number }>("get_statistics");
         statistics.value = stats;
     } catch (error) {
         console.error("Failed to load blocked domains:", error);
@@ -41,22 +31,21 @@ async function loadBlockedDomains() {
 }
 
 async function addDomain() {
-    const domain = newDomain.value.trim();
-    if (!domain) {
+    const hostname = newDomain.value.trim();
+    if (!hostname) {
         toast.error("Please enter a domain name");
         return;
     }
 
     // Basic domain validation
-    if (!/^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/.test(domain)) {
+    if (!/^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/.test(hostname)) {
         toast.error("Please enter a valid domain name");
         return;
     }
 
     isAdding.value = true;
     try {
-        // Use 127.0.0.1 as the default IP for blocking
-        await invoke("add_domain", { ip: "127.0.0.1", hostname: domain });
+        await invoke("add_domain", { hostname });
         await loadBlockedDomains();
         newDomain.value = "";
         showAddInput.value = false;
@@ -71,9 +60,9 @@ async function addDomain() {
     }
 }
 
-async function removeDomain(ip: string, hostname: string) {
+async function removeDomain(hostname: string) {
     try {
-        await invoke("remove_domain", { ip, hostname });
+        await invoke("remove_domain", { hostname });
         await loadBlockedDomains();
         toast.success("Domain removed successfully");
     } catch (error) {
@@ -164,8 +153,7 @@ onMounted(loadBlockedDomains);
             <!-- Grid Layout with Container Queries -->
             <div v-else class="@container">
                 <div class="grid grid-cols-1 @[32rem]:grid-cols-2 @[48rem]:grid-cols-3 gap-3">
-                    <DomainItem v-for="(domain, index) in blockedDomains"
-                        :key="`${domain.ip}-${domain.hostname}-${index}`" :ip="domain.ip" :hostname="domain.hostname"
+                    <DomainItem v-for="(domain, index) in blockedDomains" :key="`${domain}-${index}`" :hostname="domain"
                         :disabled="props.disabled" @remove="removeDomain" />
                 </div>
             </div>
