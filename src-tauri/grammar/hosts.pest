@@ -1,0 +1,40 @@
+// Grammar for hosts file format
+// Supports IPv4, IPv6, hostnames, comments, and empty lines
+
+WHITESPACE = _{ " " | "\t" }
+NEWLINE    = _{ "\n" | "\r\n" | "\r" }
+
+// Comment: # ... until end of line
+comment = { "#" ~ (!NEWLINE ~ ANY)* }
+
+// IPv4 address: 127.0.0.1
+ipv4 = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
+
+// IPv6 address (simplified - supports common formats)
+// ::1, 2001:db8::1, etc.
+ipv6_segment =  { ASCII_HEX_DIGIT{1, 4} }
+ipv6         = @{
+    (ipv6_segment ~ ":"){7} ~ ipv6_segment
+  | "::" ~ (ipv6_segment ~ ":")* ~ ipv6_segment?
+  | (ipv6_segment ~ ":")+ ~ "::" ~ (ipv6_segment ~ ":")* ~ ipv6_segment?
+  | (ipv6_segment ~ ":"){1, 7} ~ "::"
+}
+
+// IP address (IPv4 or IPv6)
+ip = { ipv4 | ipv6 }
+
+// Hostname: alphanumeric, dots, hyphens
+hostname_char =  { ASCII_ALPHANUMERIC | "." | "-" }
+hostname      = @{ hostname_char+ }
+
+// Entry: IP followed by one or more hostnames
+entry = { ip ~ (hostname)+ }
+
+// A line can be an entry (with optional inline comment), a comment, or empty
+// Since NEWLINE is silent, an empty line will have no inner content
+line = { (entry ~ comment?) | comment | NEWLINE }
+
+// Entire file - lines separated by NEWLINE, last line may not have trailing NEWLINE
+file = {
+    SOI ~ (line)* ~ EOI
+}

@@ -1,1 +1,69 @@
 @import "tailwindcss";
+
+/* Define CSS variables that change based on theme */
+:root {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #3a3a3a;
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;
+  --text-muted: #666666;
+  --accent: #00ff88;
+  --accent-hover: #00cc6f;
+  --border: #404040;
+  --card: #2d2d2d;
+}
+
+/* Light mode overrides */
+:root[data-theme="light"] {
+  --bg-primary: #f5f7fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #e8ecf0;
+  --text-primary: #1a1a1a;
+  --text-secondary: #4a5568;
+  --text-muted: #718096;
+  --accent: #4299e1;
+  --accent-hover: #3182ce;
+  --border: #e2e8f0;
+  --card: #ffffff;
+}
+
+/* Expose CSS variables as Tailwind utilities via @theme */
+/* Tailwind v4 strips the --color- prefix, so --color-primary becomes bg-primary, text-primary, etc. */
+@theme {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-border: var(--border);
+  --color-card: var(--card);
+}
+
+/* Base styles */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+/* Tab transition animations */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+}
+
+.fade-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}

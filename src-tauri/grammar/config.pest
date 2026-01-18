@@ -1,0 +1,33 @@
+// INI-like grammar for configuration file
+// Based on pest INI example: https://pest.rs/book/examples/ini.html
+
+WHITESPACE = _{ " " | "\t" }
+
+// Characters allowed in keys and values
+char = { ASCII_ALPHANUMERIC | "." | "_" | "/" | "-" | ":" | "\\" }
+
+// Section name (must not be empty)
+section_name = @{ char+ }
+
+// Property key (must not be empty)
+key = @{ char+ }
+
+// Property value (may be empty)
+value = @{ char* }
+
+// Section header: [section_name]
+section = { "[" ~ section_name ~ "]" }
+
+// Property: key = value
+property = { key ~ "=" ~ value }
+
+// Comment: # ... until end of line
+comment = { "#" ~ (!NEWLINE ~ ANY)* }
+
+// A line can be a section, property, comment, or empty
+line = _{ (section | property | comment)? }
+
+// Entire file
+file = {
+    SOI ~ (line ~ NEWLINE)* ~ EOI
+}
