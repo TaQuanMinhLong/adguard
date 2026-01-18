@@ -211,6 +211,18 @@ theme = dark
 max_history_entries = 50
 ```
 
+## CI/CD
+
+### GitHub Actions
+
+The project includes a GitHub Actions workflow (`.github/workflows/build.yml`) that automatically builds the Tauri application for multiple platforms when:
+
+- A new version tag is pushed (e.g., `v0.1.0`)
+- A pull request is created
+- The workflow is manually triggered
+
+The workflow uses [tauri-action](https://github.com/tauri-apps/tauri-action) to build and create releases. Currently configured for Windows builds, with Linux and macOS support ready to be enabled when those platforms are added.
+
 ## Development
 
 ### Running Tests
@@ -238,7 +250,7 @@ cargo test
 ### Currently Supported
 - ✅ Windows 10/11
 
-### Planned Support
+### Experimental Support (Self build)
 - 🔲 Linux
 - 🔲 macOS
 
