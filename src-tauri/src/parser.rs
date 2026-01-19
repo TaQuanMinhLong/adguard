@@ -1,6 +1,7 @@
+use crate::utils::{is_local_domain, is_localhost_ip};
 use pest::Parser;
 use pest_derive::Parser;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -13,30 +14,13 @@ pub struct HostsParser;
 pub enum PreservedLine {
     Comment(Arc<str>),
     NonLocalhostEntry(Arc<str>),
+    LocalhostEntry { ip: IpAddr, hostname: Arc<str> },
 }
 
 #[derive(Debug)]
 pub struct ParsedHosts {
     pub blocking: BTreeSet<Arc<str>>,
     pub preserved_lines: Vec<PreservedLine>,
-}
-
-/// Check if an IP address is a localhost address
-#[inline]
-pub fn is_localhost_ip(ip: &IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ipv4) => {
-            // 127.0.0.0/8 range (127.0.0.1 to 127.255.255.255)
-            // or 0.0.0.0
-            ipv4.octets()[0] == 127 || *ipv4 == std::net::Ipv4Addr::new(0, 0, 0, 0)
-        }
-        IpAddr::V6(ipv6) => {
-            // ::1 (IPv6 loopback)
-            // or :: (unspecified)
-            *ipv6 == std::net::Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)
-                || *ipv6 == std::net::Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)
-        }
-    }
 }
 
 /// Parse a hosts file content into managed entries and preserved lines
@@ -71,28 +55,37 @@ pub fn parse_hosts(content: &str) -> Result<ParsedHosts, pest::error::Error<Rule
                                 let mut inner = content.into_inner();
                                 let ip_str = inner.next().unwrap().as_str();
 
-                                if let Ok(ip) = IpAddr::from_str(ip_str) {
-                                    if is_localhost_ip(&ip) {
-                                        // This is a localhost entry - add to blocking map
-                                        let hostnames =
-                                            inner.map(|pair| pair.as_str()).collect::<Vec<_>>();
-
-                                        for hostname in hostnames {
-                                            blocking.insert(hostname.into());
+                                match IpAddr::from_str(ip_str) {
+                                    Ok(ip) => {
+                                        if is_localhost_ip(&ip) {
+                                            for hostname in inner.map(|pair| pair.as_str()) {
+                                                if !is_local_domain(hostname) {
+                                                    blocking.insert(hostname.into());
+                                                } else {
+                                                    // Localhost entry - preserve as-is
+                                                    preserved_lines.push(
+                                                        PreservedLine::LocalhostEntry {
+                                                            ip,
+                                                            hostname: hostname.into(),
+                                                        },
+                                                    );
+                                                }
+                                            }
+                                        } else {
+                                            // Non-localhost entry - preserve as-is
+                                            let original_line = original_line_str.trim();
+                                            preserved_lines.push(PreservedLine::NonLocalhostEntry(
+                                                original_line.into(),
+                                            ));
                                         }
-                                    } else {
-                                        // Non-localhost entry - preserve as-is
+                                    }
+                                    Err(_) => {
+                                        // Invalid IP - preserve as-is
                                         let original_line = original_line_str.trim();
                                         preserved_lines.push(PreservedLine::NonLocalhostEntry(
                                             original_line.into(),
                                         ));
                                     }
-                                } else {
-                                    // Invalid IP - preserve as-is
-                                    let original_line = original_line_str.trim();
-                                    preserved_lines.push(PreservedLine::NonLocalhostEntry(
-                                        original_line.into(),
-                                    ));
                                 }
                             }
                             Rule::comment => {
@@ -123,6 +116,7 @@ pub fn parse_hosts(content: &str) -> Result<ParsedHosts, pest::error::Error<Rule
 #[inline]
 pub fn serialize_hosts(preserved_lines: &[PreservedLine], blocking: &BTreeSet<Arc<str>>) -> String {
     let mut result = String::new();
+    let mut localhost_entries: HashMap<IpAddr, BTreeSet<Arc<str>>> = HashMap::new();
 
     // First, write preserved lines
     for line in preserved_lines {
@@ -135,16 +129,34 @@ pub fn serialize_hosts(preserved_lines: &[PreservedLine], blocking: &BTreeSet<Ar
                 result.push_str(entry);
                 result.push('\n');
             }
+            PreservedLine::LocalhostEntry { ip, hostname } => {
+                localhost_entries
+                    .entry(*ip)
+                    .or_insert_with(BTreeSet::new)
+                    .insert(hostname.clone());
+            }
         }
     }
 
-    // BTreeSet is already sorted, so we can iterate directly
-    result.push_str("127.0.0.1");
-    for hostname in blocking {
-        result.push(' ');
-        result.push_str(hostname);
+    // Write localhost entries grouped by IP
+    for (ip, hostnames) in localhost_entries {
+        result.push_str(&ip.to_string());
+        for hostname in hostnames {
+            result.push(' ');
+            result.push_str(hostname.as_ref());
+        }
+        result.push('\n');
     }
-    result.push('\n');
+
+    // Write blocking entries (non-localhost domains)
+    if !blocking.is_empty() {
+        result.push_str("127.0.0.1");
+        for hostname in blocking {
+            result.push(' ');
+            result.push_str(hostname);
+        }
+        result.push('\n');
+    }
 
     result
 }
@@ -165,12 +177,18 @@ mod tests {
 
     #[test]
     fn test_parse_simple_hosts() {
-        let content = "127.0.0.1 localhost\n127.0.0.1 example.com\n";
+        let content = "127.0.0.1 localhost example.com";
         let parsed = parse_hosts(content).unwrap();
 
-        assert_eq!(parsed.blocking.len(), 2);
-        assert!(parsed.blocking.contains("localhost"));
+        // localhost should be preserved, not blocked
+        assert_eq!(parsed.blocking.len(), 1);
+        assert!(!parsed.blocking.contains("localhost"));
         assert!(parsed.blocking.contains("example.com"));
+
+        // Check that localhost is preserved
+        assert!(parsed.preserved_lines.iter().any(|line| {
+            matches!(line, PreservedLine::LocalhostEntry { hostname, .. } if hostname.as_ref() == "localhost")
+        }));
     }
 
     #[test]
@@ -178,11 +196,17 @@ mod tests {
         let content = "# This is a comment\n127.0.0.1 localhost\n";
         let parsed = parse_hosts(content).unwrap();
 
-        assert_eq!(parsed.preserved_lines.len(), 1);
-        assert!(matches!(
-            parsed.preserved_lines[0],
-            PreservedLine::Comment(_)
-        ));
+        // Should have comment and localhost entry (preserved, not blocked)
+        assert_eq!(parsed.preserved_lines.len(), 2);
+        assert!(parsed
+            .preserved_lines
+            .iter()
+            .any(|line| { matches!(line, PreservedLine::Comment(_)) }));
+        assert!(parsed.preserved_lines.iter().any(|line| {
+            matches!(line, PreservedLine::LocalhostEntry { hostname, .. } if hostname.as_ref() == "localhost")
+        }));
+        // localhost should not be in blocking
+        assert!(!parsed.blocking.contains("localhost"));
     }
 
     #[test]
@@ -195,8 +219,11 @@ mod tests {
             matches!(line, PreservedLine::NonLocalhostEntry(s) if s.contains("192.168.1.1"))
         }));
 
-        // Localhost should be in blocking
-        assert!(parsed.blocking.contains("localhost"));
+        // Localhost should be preserved, not blocked
+        assert!(!parsed.blocking.contains("localhost"));
+        assert!(parsed.preserved_lines.iter().any(|line| {
+            matches!(line, PreservedLine::LocalhostEntry { hostname, .. } if hostname.as_ref() == "localhost")
+        }));
     }
 
     #[test]
@@ -208,9 +235,31 @@ mod tests {
         // Re-parse to verify
         let reparsed = parse_hosts(&serialized).unwrap();
 
-        // Check that localhost entries are preserved
+        // Check that localhost entries are preserved (not in blocking)
         assert_eq!(parsed.blocking.len(), reparsed.blocking.len());
-        assert!(reparsed.blocking.contains("localhost"));
+        assert!(!reparsed.blocking.contains("localhost"));
         assert!(reparsed.blocking.contains(&Arc::from("example.com")));
+
+        // Check that localhost is preserved
+        assert!(reparsed.preserved_lines.iter().any(|line| {
+            matches!(line, PreservedLine::LocalhostEntry { hostname, .. } if hostname.as_ref() == "localhost")
+        }));
+    }
+
+    #[test]
+    fn test_parse_ipv6_addresses() {
+        // Test various IPv6 address formats
+        let content = "fe00::0 ip6-localnet\nff00::0 ip6-mcastprefix\nff02::1 ip6-allnodes\nff02::2 ip6-allrouters\n::1 localhost\n";
+        let parsed = parse_hosts(content).unwrap();
+
+        // All these should be preserved as non-localhost entries (except ::1 localhost)
+        assert_eq!(parsed.preserved_lines.len(), 5); // 4 non-localhost IPv6 entries + 1 localhost entry
+        assert_eq!(parsed.blocking.len(), 0); // localhost should not be in blocking
+        assert!(!parsed.blocking.contains("localhost"));
+
+        // Check that localhost is preserved
+        assert!(parsed.preserved_lines.iter().any(|line| {
+            matches!(line, PreservedLine::LocalhostEntry { hostname, .. } if hostname.as_ref() == "localhost")
+        }));
     }
 }

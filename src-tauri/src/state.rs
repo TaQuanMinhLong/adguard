@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::parser::{parse_hosts, serialize_hosts, PreservedLine};
+use crate::utils::is_local_domain;
 use parking_lot::Mutex;
 use std::collections::BTreeSet;
 use std::fs;
@@ -32,7 +33,9 @@ impl AppState {
         {
             let mut blocking = self.blocking.lock();
             for hostname in parsed.blocking {
-                blocking.insert(hostname);
+                if !is_local_domain(&hostname) {
+                    blocking.insert(hostname);
+                }
             }
         }
         {
@@ -45,16 +48,20 @@ impl AppState {
         Ok(())
     }
 
-    /// Add a domain to blocking (only accepts localhost IPs)
+    /// Add a domain to blocking
     #[inline]
     pub fn add_block(&self, hostname: &str) {
-        self.blocking.lock().insert(hostname.into());
+        if !is_local_domain(hostname) {
+            self.blocking.lock().insert(hostname.into());
+        }
     }
 
-    /// Remove a domain from blocking (only operates on localhost IPs)
+    /// Remove a domain from blocking
     #[inline]
     pub fn remove_block(&self, hostname: &str) {
-        self.blocking.lock().remove(&Arc::from(hostname));
+        if !is_local_domain(hostname) {
+            self.blocking.lock().remove(&Arc::from(hostname));
+        }
     }
 
     /// Get all blocked domains (only returns localhost entries)
@@ -135,5 +142,32 @@ mod tests {
 
         let total = state.get_total_blocked();
         assert_eq!(total, 3);
+    }
+
+    #[test]
+    fn test_localhost_domains_not_blocked() {
+        let state = AppState::new(Config::default());
+
+        // Try to add localhost domains
+        state.add_block("localhost");
+        state.add_block("localhost.localdomain");
+        state.add_block("subdomain.localhost");
+        state.add_block("example.localhost");
+
+        // These should not be added
+        {
+            let blocking = state.blocking.lock();
+            assert!(!blocking.contains(&Arc::from("localhost")));
+            assert!(!blocking.contains(&Arc::from("localhost.localdomain")));
+            assert!(!blocking.contains(&Arc::from("subdomain.localhost")));
+            assert!(!blocking.contains(&Arc::from("example.localhost")));
+        }
+
+        // Regular domains should still work
+        state.add_block("example.com");
+        {
+            let blocking = state.blocking.lock();
+            assert!(blocking.contains(&Arc::from("example.com")));
+        }
     }
 }

@@ -11,13 +11,20 @@ comment = { "#" ~ (!NEWLINE ~ ANY)* }
 ipv4 = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 
 // IPv6 address (simplified - supports common formats)
-// ::1, 2001:db8::1, etc.
-ipv6_segment =  { ASCII_HEX_DIGIT{1, 4} }
-ipv6         = @{
+// ::1, 2001:db8::1, fe00::0, etc.
+// Strategy: Match segments with separators, where separator can be : or ::
+// Since pest tries alternatives in order, we check for :: before :
+ipv6_segment   =  { ASCII_HEX_DIGIT{1, 4} }
+ipv6_separator =  { "::" | ":" }
+ipv6           = @{
+    // Full format: 8 segments with 7 single colons (no compression)
     (ipv6_segment ~ ":"){7} ~ ipv6_segment
-  | "::" ~ (ipv6_segment ~ ":")* ~ ipv6_segment?
-  | (ipv6_segment ~ ":")+ ~ "::" ~ (ipv6_segment ~ ":")* ~ ipv6_segment?
-  | (ipv6_segment ~ ":"){1, 7} ~ "::"
+  | // Compressed at start: :: followed by optional segments
+  "::" ~ (ipv6_segment ~ ":")* ~ ipv6_segment?
+  | // Compressed formats: segments separated by : or ::
+  // Match first segment, then zero or more (separator + segment) pairs
+  // The separator rule tries :: first, so it will match :: when available
+  ipv6_segment ~ (ipv6_separator ~ ipv6_segment)*
 }
 
 // IP address (IPv4 or IPv6)

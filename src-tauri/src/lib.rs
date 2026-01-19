@@ -5,6 +5,7 @@ mod history;
 mod parser;
 mod platform;
 mod state;
+mod utils;
 mod watcher;
 
 use crate::config::Config;

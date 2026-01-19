@@ -49,7 +49,7 @@ impl Default for Config {
         Config {
             host_file_path: None,
             history_dir: None,
-            max_history_entries: 50,
+            max_history_entries: 5,
             theme: Theme::Dark,
         }
     }
