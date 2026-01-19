@@ -2,13 +2,16 @@
 
 A modern desktop application built with Tauri 2 for managing ad-blocking using the hosts file. Provides an intuitive interface to view, add, and remove blocked domains with a comprehensive backup and history system.
 
+**Note**: The application displays as "AdBlock Manager" in the UI, but the project is named "AdGuard Manager".
+
 ## Features
 
 ### 🚫 Domain Management
 - **View Blocked Domains**: See all currently blocked domains in a clean, organized interface
-- **Add Domains**: Easily add new domains to block
+- **Add Domains**: Easily add new domains to block with domain validation
 - **Remove Domains**: Remove domains from the block list with a single click
 - **Save Changes**: Commit changes to the hosts file with automatic DNS cache flushing
+- **Statistics**: View total count of blocked domains at a glance
 
 ### 📚 History & Backup
 - **Automatic Backups**: Every save operation creates a backup snapshot
@@ -54,6 +57,8 @@ A modern desktop application built with Tauri 2 for managing ad-blocking using t
 - **parking_lot**: Efficient synchronization primitives
 - **chrono**: Date and time library
 - **tokio**: Async runtime
+- **anyhow**: Error handling library
+- **serde_json**: JSON serialization/deserialization
 
 ## Prerequisites
 
@@ -62,7 +67,7 @@ A modern desktop application built with Tauri 2 for managing ad-blocking using t
 - **Package Manager**: npm, yarn, pnpm, or bun
 - **System Requirements**:
   - Windows 10/11 (currently supported)
-  - Linux (planned)
+  - Linux (currently supported)
   - macOS (planned)
 
 ## Installation
@@ -89,7 +94,11 @@ A modern desktop application built with Tauri 2 for managing ad-blocking using t
    npm run tauri dev
    # or
    bun run tauri dev
+   # or
+   pnpm tauri dev
    ```
+
+   **Note**: The project is configured to use `bun` by default (see `tauri.conf.json`), but npm, yarn, or pnpm will work as well.
 
 ### Building for Production
 
@@ -98,6 +107,8 @@ A modern desktop application built with Tauri 2 for managing ad-blocking using t
    npm run tauri build
    # or
    bun run tauri build
+   # or
+   pnpm tauri build
    ```
 
 2. **Output location**
@@ -108,7 +119,7 @@ A modern desktop application built with Tauri 2 for managing ad-blocking using t
 
 ### First Run
 
-1. **Launch the application** (requires administrator privileges on Windows)
+1. **Launch the application** (requires administrator/root privileges on Windows and Linux)
 2. The app will automatically:
    - Detect your hosts file location
    - Load existing blocked domains
@@ -123,8 +134,9 @@ A modern desktop application built with Tauri 2 for managing ad-blocking using t
 2. **Add a Domain**
    - Click the "Add Domain" button
    - Enter the domain name (e.g., `example.com`)
-   - Click "Add"
+   - Press Enter or click "Add" to add the domain to the list
    - Click "Save Changes" to commit to the hosts file
+   - Domain names are validated before being added
 
 3. **Remove a Domain**
    - Click the "Remove" button next to any domain
@@ -163,12 +175,18 @@ A modern desktop application built with Tauri 2 for managing ad-blocking using t
 adguard/
 ├── src/                          # Frontend source code
 │   ├── components/               # Vue components
-│   │   ├── BlockedList.vue     # Main domain management interface
+│   │   ├── BlockedList.vue      # Main domain management interface
+│   │   ├── DomainItem.vue       # Individual domain item component
 │   │   ├── History.vue          # Backup history interface
 │   │   ├── Settings.vue         # Settings interface
+│   │   ├── StatisticsCard.vue   # Statistics display component
 │   │   └── ui/                  # UI component library
+│   │       ├── alert/           # Alert components
+│   │       └── checkbox/        # Checkbox components
 │   ├── composables/             # Vue composables
+│   │   └── useTheme.ts          # Theme management composable
 │   ├── state.ts                 # Global state management
+│   ├── styles.ts                # Utility functions for styling
 │   └── tailwind.css             # TailwindCSS configuration
 ├── src-tauri/                   # Backend source code
 │   ├── src/
@@ -180,11 +198,15 @@ adguard/
 │   │   ├── history.rs           # Backup history management
 │   │   ├── platform.rs          # Platform-specific utilities
 │   │   ├── watcher.rs           # File system watcher
-│   │   └── commit.rs            # Commit operations
+│   │   ├── commit.rs            # Commit operations
+│   │   └── utils.rs             # Utility functions
 │   ├── grammar/                 # Pest grammar files
 │   │   ├── hosts.pest           # Hosts file grammar
 │   │   └── config.pest          # Config file grammar
-│   └── Cargo.toml               # Rust dependencies
+│   ├── capabilities/            # Tauri security capabilities
+│   │   └── default.json         # Default window capabilities
+│   ├── Cargo.toml               # Rust dependencies
+│   └── tauri.conf.json          # Tauri configuration
 ├── package.json                 # Frontend dependencies
 └── README.md                    # This file
 ```
@@ -194,15 +216,20 @@ adguard/
 The application uses an INI-like configuration file stored in platform-specific App Data directories:
 
 - **Windows**: `%APPDATA%\adguard\config.ini`
-- **Linux**: `~/.config/adguard/config.ini` (planned)
+- **Linux**: `~/.config/adguard/config.ini`
 - **macOS**: `~/Library/Application Support/adguard/config.ini` (planned)
 
 ### Configuration Format
 
 ```ini
 [paths]
+# Windows example:
 host_file_path = C:\Windows\System32\drivers\etc\hosts
 history_dir = C:\Users\YourName\AppData\Roaming\adguard\history
+
+# Linux example:
+# host_file_path = /etc/hosts
+# history_dir = /home/username/.config/adguard/history
 
 [appearance]
 theme = dark
@@ -221,7 +248,7 @@ The project includes a GitHub Actions workflow (`.github/workflows/build.yml`) t
 - A pull request is created
 - The workflow is manually triggered
 
-The workflow uses [tauri-action](https://github.com/tauri-apps/tauri-action) to build and create releases. Currently configured for Windows builds, with Linux and macOS support ready to be enabled when those platforms are added.
+The workflow uses [tauri-action](https://github.com/tauri-apps/tauri-action) to build and create releases. Currently configured for Windows and Linux builds, with macOS support ready to be enabled when that platform is added.
 
 ## Development
 
@@ -235,7 +262,22 @@ cargo test
 ### Code Style
 
 - **Rust**: Follows standard Rust formatting (`cargo fmt`)
-- **TypeScript/Vue**: Uses Biome for formatting and linting
+- **TypeScript/Vue**: Uses Biome for formatting and linting (configured in `biome.json`)
+
+### Format Code
+
+```bash
+# Format Rust code
+cd src-tauri
+cargo fmt
+
+# Format TypeScript/Vue code (using Biome)
+npx @biomejs/biome format --write .
+# or
+bunx @biomejs/biome format --write .
+```
+
+**Note**: Biome is configured in `biome.json` and can be integrated into your editor or run manually.
 
 ### Key Design Decisions
 
@@ -244,19 +286,22 @@ cargo test
 3. **File Watching**: Monitors hosts file for external changes and automatically updates state
 4. **History System**: Complete file snapshots for reliable rollback functionality
 5. **Theme System**: CSS variables with TailwindCSS for easy theme switching
+6. **Domain Validation**: Client-side validation using regex to ensure valid domain names before adding
+7. **Responsive Design**: Uses CSS container queries for adaptive grid layouts
+8. **Toast Notifications**: Rich toast notifications using vue-sonner for user feedback
 
 ## Platform Support
 
 ### Currently Supported
 - ✅ Windows 10/11
+- ✅ Linux
 
-### Experimental Support (Self build)
-- 🔲 Linux
+### Planned Support
 - 🔲 macOS
 
 ## Security Considerations
 
-- **Administrator Privileges**: Required to modify the hosts file
+- **Administrator/Root Privileges**: Required to modify the hosts file (Windows requires administrator, Linux requires root/sudo)
 - **File Validation**: History files are verified before rollback
 - **Atomic Writes**: Hosts file updates use atomic file operations
 - **Safe Parsing**: Robust parsing prevents corruption of existing hosts file entries
@@ -268,6 +313,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 [Add your license here]
+
+## Version
+
+Current version: **0.1.2**
 
 ## Acknowledgments
 
